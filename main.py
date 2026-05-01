@@ -34,43 +34,65 @@ def get_headers(referer_path):
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-# --- Parsers ---
-def parse_generic_table(html):
+# --- Specific Parsers ---
+def parse_results(html, mode):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table")
     if not table: return []
-    
     rows = table.find_all("tr")
     results = []
+    
     for tr in rows:
         cols = [td.get_text(strip=True) for td in tr.find_all("td")]
-        if len(cols) >= 4:
-            results.append({
-                "mobile/cnic": cols[0],
-                "name": cols[1],
-                "cnic/father": cols[2],
-                "address": cols[3],
-                "extra": cols[4] if len(cols) > 4 else ""
-            })
+        if not cols or len(cols) < 2: continue
+        
+        if mode in ["mobile", "cnic"]:
+            if len(cols) >= 4:
+                results.append({"mobile": cols[0], "name": cols[1], "cnic": cols[2], "address": cols[3]})
+        elif mode == "police":
+            if len(cols) >= 4:
+                results.append({
+                    "cnic": cols[0], "name": cols[1], "father_name": cols[2], 
+                    "address": cols[3], "crime": cols[4] if len(cols)>4 else "",
+                    "station": cols[5] if len(cols)>5 else "", "status": cols[6] if len(cols)>6 else ""
+                })
+        elif mode == "landline":
+            if len(cols) >= 3:
+                results.append({"number": cols[0], "name": cols[1], "address": cols[2], "area": cols[3] if len(cols)>3 else ""})
     return results
 
-# --- Main API Route ---
+# --- Endpoints ---
+
+# 1. Health Check Endpoint
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "service": "Pakistan Database API",
+        "copyright": COPYRIGHT_NOTICE
+    })
+
+# 2. Universal API Endpoint (Mobile, CNIC, Landline, Police)
 @app.route('/api', methods=['GET'])
-def universal_api():
+def main_api():
     try:
-        # গেট মেথড থেকে প্যারামিটার নেওয়া
         number = request.args.get('number')
         cnic = request.args.get('cnic')
+        police_query = request.args.get('police') # নতুন প্যারামিটার ফর পুলিশ
         
         query_value = ""
-        target_endpoint = TARGET_PATH
-        mode = "standard"
+        mode = ""
+        endpoint = TARGET_PATH
 
-        if number:
+        # লজিক সিলেকশন
+        if police_query:
+            query_value = police_query.strip()
+            endpoint = POLICE_PATH
+            mode = "police"
+        elif number:
             query_value = number.strip()
-            # ল্যান্ডলাইন নাকি মোবাইল চেক
-            if len(query_value) >= 9 and len(query_value) <= 10 and query_value.startswith('0'):
-                target_endpoint = LANDLINE_PATH
+            if query_value.startswith('0') and len(query_value) <= 11:
+                endpoint = LANDLINE_PATH
                 mode = "landline"
             else:
                 mode = "mobile"
@@ -78,33 +100,16 @@ def universal_api():
             query_value = cnic.strip()
             mode = "cnic"
         else:
-            return jsonify({"error": "Please provide 'number' or 'cnic' parameter"}), 400
+            return jsonify({"error": "Missing query parameter (number, cnic, or police)"}), 400
 
         rate_limit_wait()
         
         # রিকোয়েস্ট পাঠানো
-        url = f"{TARGET_BASE.rstrip('/')}{target_endpoint}"
-        resp = requests.post(
-            url, 
-            headers=get_headers(target_endpoint), 
-            data={"search_query": query_value}, 
-            timeout=25
-        )
+        url = f"{TARGET_BASE.rstrip('/')}{endpoint}"
+        resp = requests.post(url, headers=get_headers(endpoint), data={"search_query": query_value}, timeout=25)
         resp.raise_for_status()
 
-        # ডাটা পার্সিং (পুলিশ ডাটাবেস চেক করার জন্য অতিরিক্ত লজিক)
-        results = parse_generic_table(resp.text)
-        
-        # যদি সাধারণ সার্চে কিছু না পাওয়া যায়, তবে অটোমেটিক পুলিশ ডাটাবেস ট্রাই করবে
-        if not results and (mode == "mobile" or mode == "cnic"):
-            police_resp = requests.post(
-                f"{TARGET_BASE.rstrip('/')}{POLICE_PATH}",
-                headers=get_headers(POLICE_PATH),
-                data={"search_query": query_value},
-                timeout=25
-            )
-            results = parse_generic_table(police_resp.text)
-            mode = "police/crime_db"
+        results = parse_results(resp.text, mode)
 
         return jsonify({
             "success": True,
@@ -122,9 +127,14 @@ def universal_api():
 @app.route('/')
 def home():
     return jsonify({
-        "status": "Online",
-        "usage": "/api?number=92300xxxxxxx or /api?cnic=12345xxxxxxx",
-        "copyright": COPYRIGHT_NOTICE
+        "message": "Premium API is Live",
+        "endpoints": {
+            "mobile": "/api?number=923xxx",
+            "cnic": "/api?cnic=xxxxx",
+            "landline": "/api?number=0xxxx",
+            "police": "/api?police=xxxxx",
+            "health": "/health"
+        }
     })
 
 if __name__ == '__main__':

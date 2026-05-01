@@ -1,13 +1,12 @@
 from flask import Flask, request, jsonify
 import os
-import re
 import time
 import requests
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
-# --- Configuration ---
+# --- কনফিগারেশন ---
 TARGET_BASE = os.getenv("TARGET_BASE", "https://pakistandatabase.com")
 TARGET_PATH = "/databases/sim.php"
 POLICE_PATH = "/databases/police.php"
@@ -16,9 +15,9 @@ MIN_INTERVAL = 1.0
 LAST_CALL = {"ts": 0.0}
 
 COPYRIGHT_NOTICE = "👉🏻 @sakib01994"
-CREDIT = "@sakib01994 & SB-SAKIB"
+CREDIT = "@Bj_devs & ABBAS"
 
-# --- Utility Functions ---
+# --- ইউটিলিটি ফাংশন ---
 def rate_limit_wait():
     now = time.time()
     elapsed = now - LAST_CALL["ts"]
@@ -34,7 +33,7 @@ def get_headers(referer_path):
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-# --- Specific Parsers ---
+# --- পার্সার লজিক (সব ডাটাবেসের জন্য) ---
 def parse_results(html, mode):
     soup = BeautifulSoup(html, "html.parser")
     table = soup.find("table")
@@ -61,37 +60,28 @@ def parse_results(html, mode):
                 results.append({"number": cols[0], "name": cols[1], "address": cols[2], "area": cols[3] if len(cols)>3 else ""})
     return results
 
-# --- Endpoints ---
-
-# 1. Health Check Endpoint
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({
-        "status": "healthy",
-        "service": "Pakistan Database API",
-        "copyright": COPYRIGHT_NOTICE
-    })
-
-# 2. Universal API Endpoint (Mobile, CNIC, Landline, Police)
+# --- মেইন এপিআই এন্ডপয়েন্ট ---
 @app.route('/api', methods=['GET'])
-def main_api():
+def api_service():
     try:
+        # প্যারামিটার গ্রহণ
         number = request.args.get('number')
         cnic = request.args.get('cnic')
-        police_query = request.args.get('police') # নতুন প্যারামিটার ফর পুলিশ
+        police = request.args.get('police') # পুলিশ রেকর্ডের জন্য প্যারামিটার
         
         query_value = ""
         mode = ""
         endpoint = TARGET_PATH
 
-        # লজিক সিলেকশন
-        if police_query:
-            query_value = police_query.strip()
+        # প্যারামিটার অনুযায়ী মোড সিলেকশন
+        if police:
+            query_value = police.strip()
             endpoint = POLICE_PATH
             mode = "police"
         elif number:
             query_value = number.strip()
-            if query_value.startswith('0') and len(query_value) <= 11:
+            # ল্যান্ডলাইন ডিটেকশন (যদি ০ দিয়ে শুরু হয়)
+            if query_value.startswith('0'):
                 endpoint = LANDLINE_PATH
                 mode = "landline"
             else:
@@ -100,23 +90,24 @@ def main_api():
             query_value = cnic.strip()
             mode = "cnic"
         else:
-            return jsonify({"error": "Missing query parameter (number, cnic, or police)"}), 400
+            return jsonify({"error": "Missing parameter! Use 'number', 'cnic', or 'police'"}), 400
 
         rate_limit_wait()
         
-        # রিকোয়েস্ট পাঠানো
+        # ডাটা ফেচ করা
         url = f"{TARGET_BASE.rstrip('/')}{endpoint}"
         resp = requests.post(url, headers=get_headers(endpoint), data={"search_query": query_value}, timeout=25)
         resp.raise_for_status()
 
-        results = parse_results(resp.text, mode)
+        data_list = parse_results(resp.text, mode)
 
         return jsonify({
             "success": True,
+            "status": "Premium Mode",
             "query": query_value,
             "type": mode,
-            "results_count": len(results),
-            "results": results,
+            "results_count": len(data_list),
+            "data": data_list,
             "copyright": COPYRIGHT_NOTICE,
             "credit": CREDIT
         })
@@ -124,17 +115,29 @@ def main_api():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/')
-def home():
+# --- হেলথ চেক এন্ডপয়েন্ট ---
+@app.route('/health', methods=['GET'])
+def health_check():
     return jsonify({
-        "message": "Premium API is Live",
+        "status": "running",
+        "api": "Pakistan Database All-in-One",
+        "copyright": COPYRIGHT_NOTICE,
+        "credit": CREDIT
+    })
+
+# --- হোম পেজ ---
+@app.route('/')
+def index():
+    return jsonify({
+        "message": "Welcome to Premium Database API",
         "endpoints": {
-            "mobile": "/api?number=923xxx",
+            "mobile": "/api?number=92300xxxxxxx",
             "cnic": "/api?cnic=xxxxx",
-            "landline": "/api?number=0xxxx",
             "police": "/api?police=xxxxx",
+            "landline": "/api?number=0xxxxxx",
             "health": "/health"
-        }
+        },
+        "developer": COPYRIGHT_NOTICE
     })
 
 if __name__ == '__main__':

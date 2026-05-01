@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "methods": ["GET"],
+      "dest": "/main.py"
+    },
+    {
+      "src": "/health",
+      "methods": ["GET"],
+      "dest": "/main.py"
+    },
+    {
+      "src": "/api/(.*)",
+      "methods": ["GET", "POST"],
+      "dest": "/main.py"
+    }
+  ]
+}

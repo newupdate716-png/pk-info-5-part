@@ -16,7 +16,7 @@ MIN_INTERVAL = 1.0
 LAST_CALL = {"ts": 0.0}
 
 COPYRIGHT_NOTICE = "👉🏻 @sakib01994"
-CREDIT = "@Bj_devs & ABBAS"
+CREDIT = "@sakib01994 & SB-SAKIB"
 
 # --- Utility Functions ---
 def rate_limit_wait():
